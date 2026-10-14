@@ -1,0 +1,4 @@
+# PlatformIO: compilados, librerias descargadas y configuracion generada del editor
+.pio/
+.vscode/
+*.pyc
