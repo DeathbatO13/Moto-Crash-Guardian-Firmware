@@ -18,9 +18,9 @@
 #define PIN_IMU_INT      19   // MPU6050 INT (data ready) — no usado por defecto
 #define PIN_GPS_RX       16   // ESP32 RX <- NEO-6M TX
 #define PIN_GPS_TX       17   // ESP32 TX -> NEO-6M RX (opcional)
-#define PIN_BATTERY_ADC  34   // ADC1, divisor 100k/100k ⚠️
-#define PIN_CHRG         35   // señal CHRG del cargador ⚠️ no implementada
-#define PIN_STATUS_LED   2    // LED integrado del DevKit
+#define PIN_LED_BLE      12   // LED D1 (220 Ω a GND): conectado por BLE
+#define PIN_LED_ERROR    14   // LED D2 (220 Ω a GND): fallo del módulo
+#define PIN_BATTERY_ADC  34   // ADC1; solo si BATTERY_SENSING_ENABLED (divisor no montado)
 
 #define MPU6050_ADDR     0x68
 #define I2C_FREQ_HZ      400000u   // docs/11 §2: I²C a 400 kHz
@@ -72,7 +72,10 @@
 
 // --- Energía (docs/11 §8) ---
 #define CPU_FREQ_MHZ           80    // ⚠️ POR CONFIRMAR con medición
-#define BATTERY_SENSING_ENABLED 1    // 0 si no está poblado el divisor
+// El prototipo no monta el divisor de tensión (el módulo cargador ya avisa de
+// batería baja). Con 0 el nivel se reporta como "desconocida" (255); en 1 un
+// pin 34 flotante leería valores aleatorios y dispararía un FAULT de batería.
+#define BATTERY_SENSING_ENABLED 0
 #define BATTERY_DIVIDER_RATIO  2.0f  // 100k/100k
 #define BATTERY_VOLTAGE_FULL_V  4.20f
 #define BATTERY_VOLTAGE_MID_V   3.70f

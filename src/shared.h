@@ -89,5 +89,6 @@ extern volatile uint16_t g_traceRequestEventId;
 void imuTask(void* param);
 void gpsTask(void* param);
 void powerTask(void* param);
+void statusLedTask(void* param);
 
 } // namespace mcg
