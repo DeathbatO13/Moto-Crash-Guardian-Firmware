@@ -4,6 +4,7 @@
 //   Core 0 (PRO_CPU): bleServerTask prio 3 · 200 ms
 //                     gpsTask      prio 2 · continua
 //                     powerTask    prio 1 · 1 s
+//                     statusLedTask prio 1 · 50 ms
 #include <Arduino.h>
 #include <WiFi.h>   // se apaga para ahorrar energía (docs/11 §1)
 
@@ -51,6 +52,7 @@ void setup() {
     xTaskCreatePinnedToCore(bleServerTask, "ble",  8192, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(gpsTask,       "gps",  4096, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(powerTask,     "pwr",  3072, nullptr, 1, nullptr, 0);
+    xTaskCreatePinnedToCore(statusLedTask, "led",  2048, nullptr, 1, nullptr, 0);
 
     // La lógica vive en las tareas anteriores
     vTaskDelete(nullptr);

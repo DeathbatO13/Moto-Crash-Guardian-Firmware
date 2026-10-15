@@ -30,7 +30,8 @@ El módulo **solo detecta y reporta**. La decisión de pedir ayuda (SMS, llamada
 | Microcontrolador | ESP32 DevKit (`esp32dev`) | BLE integrado; el WiFi se apaga a propósito |
 | IMU | MPU-6050 (I²C, dirección `0x68`) | ±16 g y ±2000 °/s, 200 muestras/s |
 | GPS | NEO-6M | NMEA a 9600 baudios, 1 actualización por segundo |
-| Batería | LiPo 1S (3,3–4,2 V) | Se mide con un divisor resistivo 100 kΩ / 100 kΩ |
+| Batería | LiPo 1S (3,3–4,2 V) | Con módulo cargador/protector, interruptor y regulador a 3,3 V. **No se mide su nivel** (sin divisor): el cargador ya indica batería baja |
+| LEDs | 2 × HLMP-1640 con 220 Ω | D1 = conexión BLE, D2 = error |
 
 Necesitas además un **cable USB de datos** (algunos cables solo cargan y el ESP32 no aparecerá como puerto serie).
 
@@ -45,14 +46,24 @@ Los pines salen de [`include/config.h`](include/config.h).
 | MPU INT | GPIO 19 | MPU-6050 INT (definido, **no usado**) |
 | GPS RX | GPIO 16 | NEO-6M **TX** |
 | GPS TX | GPIO 17 | NEO-6M **RX** (opcional) |
-| Batería (ADC) | GPIO 34 | Punto medio del divisor 100 kΩ / 100 kΩ |
-| Estado de carga | GPIO 35 | Señal CHRG del cargador (definido, **no implementado**) |
-| LED | GPIO 2 | LED integrado (definido, **no usado**) |
+| LED BLE (D1) | GPIO 12 | Resistencia 220 Ω → LED → GND |
+| LED error (D2) | GPIO 14 | Resistencia 220 Ω → LED → GND |
 
 - Alimenta el MPU-6050 y el NEO-6M a **3,3 V** y une las tierras (GND) de todos los módulos.
 - Los RX/TX van **cruzados**: el TX del GPS al RX del ESP32.
 - ⚠️ Los pines de `config.h` están marcados *por confirmar con el cableado real*. Si tu montaje es distinto, **cambia los números en `config.h`** y vuelve a compilar.
-- El divisor de batería no debe superar 3,3 V en GPIO 34: con una LiPo de 4,2 V el divisor 1:2 da 2,1 V.
+- El prototipo **no tiene divisor de batería**: `BATTERY_SENSING_ENABLED` está en `0` y el nivel se reporta como "desconocida" (la app muestra `--%`). Si algún día montas un divisor 100 kΩ / 100 kΩ en GPIO 34, ponlo en `1`.
+- GPIO 12 es un pin de arranque (*strapping*) del ESP32. Con el LED a GND funciona bien, pero **no pongas un pull-up ni un nivel alto en GPIO 12 durante el arranque**: el chip no arrancaría.
+
+### LEDs de estado
+
+| LED | Comportamiento | Significado |
+|---|---|---|
+| Ambos | Encendidos 0,5 s al arrancar | Prueba de cableado |
+| D1 (BLE) | Destello corto cada 2 s | Anunciándose, sin app conectada |
+| D1 (BLE) | Encendido fijo | App conectada |
+| D2 (error) | Apagado | Sin fallos |
+| D2 (error) | Encendido fijo | Módulo en `FAULT` (p. ej. el MPU-6050 no responde) |
 
 ## 3. Cómo funciona
 
@@ -63,7 +74,8 @@ Los pines salen de [`include/config.h`](include/config.h).
 | `imuTask` | 1 | 5 | 200 Hz | Lee el IMU, filtra la orientación, ejecuta el detector, llena el anillo de la caja negra y atiende los comandos |
 | `bleServerTask` | 0 | 3 | 10 ms | Servidor BLE: telemetría (5 Hz), GPS (1 Hz), eventos, batería y envío de trazas |
 | `gpsTask` | 0 | 2 | continua | Lee NMEA y publica una foto cada segundo |
-| `powerTask` | 0 | 1 | 1 s | Mide la batería (curva LiPo 1S) |
+| `powerTask` | 0 | 1 | 1 s | Mide la batería (curva LiPo 1S); desactivada en el prototipo |
+| `statusLedTask` | 0 | 1 | 50 ms | Maneja los LEDs de conexión BLE y error |
 
 ### Estados del detector
 
@@ -267,7 +279,9 @@ Los vectores de `test_protocol` son los mismos que usa la app Android: el firmwa
 | No hay eventos de caída | El módulo no está armado | La app lo arma al **iniciar el viaje**; comprueba `Estado: 2` en el monitor serie |
 | `TARE` responde `BUSY` | La moto no está quieta (1 g ± 50 mg y ≤ 5 °/s durante 1 s) | Déjala inmóvil y repite |
 | El GPS siempre dice `SIN FIX` | Sin vista al cielo, o TX/RX sin cruzar | Pruébalo en exterior varios minutos; revisa que el TX del GPS vaya al GPIO 16 |
-| El porcentaje de batería es incorrecto | Divisor distinto o sin poblar | Ajusta `BATTERY_DIVIDER_RATIO` o pon `BATTERY_SENSING_ENABLED 0` (reporta "desconocida") |
+| La app muestra batería `--%` | Es lo esperado: el prototipo no mide la batería | Si montas el divisor, pon `BATTERY_SENSING_ENABLED 1` y ajusta `BATTERY_DIVIDER_RATIO` |
+| El LED rojo/de error se queda encendido | El módulo está en `FAULT` | Revisa SDA/SCL y la alimentación del MPU-6050; al responder de nuevo se recupera solo |
+| Ningún LED se enciende al arrancar | LED al revés o pin mal conectado | Revisa polaridad (ánodo hacia la resistencia) y GPIO 12/14 |
 
 **Restablecimiento de fábrica:** desde la app (comando `FACTORY_RESET`) o borrando la flash con `pio run -e esp32dev -t erase` seguido de una nueva carga.
 
@@ -275,8 +289,8 @@ Los vectores de `test_protocol` son los mismos que usa la app Android: el firmwa
 
 - Versión del firmware: **1.0.0** · Protocolo BLE: **v1** (se reporta en `DEVICE_INFO`).
 - Primer código del prototipo: **aún no probado en un vehículo en movimiento**; los umbrales por defecto (3,5 g, 300 °/s, 65°/2 s) son valores iniciales a ajustar con pruebas de campo.
-- Marcados *por confirmar* en `config.h`: pines según el cableado real, divisor de batería y frecuencia de CPU (80 MHz).
-- No implementados: lectura de la señal de carga (`PIN_CHRG`) y uso del LED de estado.
+- Marcados *por confirmar* en `config.h`: pines según el cableado real y frecuencia de CPU (80 MHz).
+- Sin medición de batería ni de estado de carga (hardware sin divisor ni señal CHRG).
 - `preTriggerSamples` en los metadatos de la traza siempre indica 600, aunque el anillo tenga menos muestras (solo ocurre si el evento llega en los primeros 3 s tras el arranque).
 - `ACK_EVENT` modifica la cola de eventos desde el contexto del host BLE, mientras que el resto de la cola la maneja `bleServerTask`: conviene serializar ese acceso.
 - Solo se conservan las 2 últimas trazas, en RAM.
@@ -293,7 +307,8 @@ src/main.cpp               Arranque y creación de tareas
 src/imu_task.cpp           IMU, detector, caja negra y comandos
 src/ble_server.cpp         Servidor GATT (NimBLE)
 src/gps_task.cpp           Lectura NMEA del NEO-6M
-src/power_task.cpp         Batería
+src/power_task.cpp         Batería (desactivada en el prototipo)
+src/status_led.cpp         LEDs de conexión BLE y error
 src/settings.cpp           Configuración persistente (NVS)
 test/                      Pruebas unitarias nativas (Unity)
 platformio.ini             Entornos: esp32dev (placa) y native (pruebas)
